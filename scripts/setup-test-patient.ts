@@ -107,7 +107,7 @@ async function findOrCreatePatient(cos: ReturnType<typeof cosClientFromEnv>): Pr
     try {
       const bundle = await cos.fhirGet<{ entry?: Array<{ resource: { id: string } }> }>(
         "Patient",
-        { identifier, _summary: "true" }
+        { identifier }
       );
       const id = bundle.entry?.[0]?.resource?.id;
       if (id) {
@@ -132,7 +132,7 @@ async function findOrCreatePatient(cos: ReturnType<typeof cosClientFromEnv>): Pr
     try {
       const all = await cos.fhirGet<{ entry?: Array<{ resource: { id: string; name?: unknown; birthDate?: string; identifier?: unknown } }> }>(
         "Patient",
-        { _summary: "true", _count: "10" }
+        { _count: "10" }
       );
       if (all.entry?.length) {
         console.log("  Available patients:");
