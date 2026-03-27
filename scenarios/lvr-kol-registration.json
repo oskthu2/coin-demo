@@ -1,10 +1,10 @@
 {
   "metadata": {
     "id": "lvr-kol-outpatient-v1",
-    "title": "LVR: KOL Öppenvårdsbesök — Konversationell Registrering",
-    "tags": ["healthcare", "quality-registry", "COPD", "KOL", "LVR", "Sweden", "FHIR"],
-    "description": "An EHR agent (COSMIC/COS side) works with an LVR registry agent to register a COPD outpatient visit. The EHR agent queries live FHIR data from the COS sandbox; the LVR agent knows the registry's variable definitions and validation rules. Demonstrates conversational interoperability without a pre-built integration.",
-    "background": "Luftvägsregistret (LVR) is Sweden's national quality registry for asthma and COPD. Despite a well-defined variable set and a Stratum REST/SOAP API, data transfer today relies on direct vendor integrations (e.g. Medrave4) — not NKRR. This demo shows what Language-First Interoperability looks like in practice: the EHR side retrieves real patient data via FHIR; the registry side knows exactly what it needs and negotiates the gaps conversationally.",
+    "title": "LVR: COPD Outpatient Visit Registration",
+    "tags": ["healthcare", "quality-registry", "COPD", "LVR", "Sweden", "FHIR"],
+    "description": "An EHR agent (COSMIC/COS) works with an LVR registry agent to register a COPD outpatient visit. The EHR agent queries live FHIR data from the COS sandbox; the LVR agent knows the registry variable definitions and validation rules. Demonstrates conversational interoperability without a pre-built integration.",
+    "background": "Luftvarsregistret (LVR) is Sweden's national quality registry for asthma and COPD. Despite a well-defined variable set and a Stratum REST/SOAP API, data transfer today relies on direct vendor integrations, not NKRR. This demo shows Language-First Interoperability: the EHR side retrieves real patient data via FHIR; the registry side knows exactly what it needs and negotiates the gaps conversationally.",
     "challenges": [
       "CAT score is patient-reported and typically not documented in the EHR",
       "Spirometry may reside in a separate lung-function system with delayed FHIR transfer",
@@ -17,13 +17,13 @@
       "agentId": "ehr_applicant_agent",
       "principal": {
         "type": "organization",
-        "name": "Region Västra Götaland — COSMIC/COS",
+        "name": "Region Vastra Gotaland - COSMIC/COS",
         "description": "The regional EHR system (COSMIC) exposed via Cambio Open Services (COS) FHIR R4 API."
       },
-      "situation": "The EHR agent represents a clinician who has just seen a COPD patient for an outpatient follow-up and wants to register the visit with Luftvägsregistret. The agent has access to the patient's clinical record via the COS FHIR API.",
-      "systemPrompt": "You are an EHR applicant agent for a Swedish healthcare provider using COSMIC / COS (Cambio Open Services). Your job is to register a COPD (KOL) patient's outpatient visit with the Luftvägsregistret (LVR) quality registry.\n\nYou have access to the patient's FHIR record via COS tools. Use them to answer the LVR agent's requests. Be concise and structured — bullet points with values and units work well. Always provide the LOINC or ICD-10 code alongside values when you have them.\n\nIf a requested data item is not in the EHR (e.g. CAT score), say so explicitly. Do not fabricate values.",
+      "situation": "The EHR agent represents a clinician who has just seen a COPD patient for an outpatient follow-up and wants to register the visit with Luftvarsregistret. The agent has access to the patient's clinical record via the COS FHIR API.",
+      "systemPrompt": "You are an EHR applicant agent for a Swedish healthcare provider using COSMIC / COS (Cambio Open Services). Your job is to register a COPD patient's outpatient visit with the LVR (Luftvarsregistret) quality registry.\n\nYou have access to the patient's FHIR record via COS tools. Use them to answer the LVR agent's requests. Be concise and structured - bullet points with values and units work well. Always provide the LOINC or ICD-10 code alongside values when you have them.\n\nIf a requested data item is not in the EHR (e.g. CAT score), say so explicitly. Do not fabricate values.",
       "goals": [
-        "Initiate the KOL registration with the LVR administrator agent",
+        "Initiate the COPD registration with the LVR administrator agent",
         "Retrieve requested clinical data from the COS FHIR API",
         "Provide data in a clear, structured format with codes where available",
         "Honestly report any data that is not available in the EHR",
@@ -43,7 +43,7 @@
             },
             "required": ["personnummer"]
           },
-          "synthesisGuidance": "Return the patient's FHIR ID, name, birth date and gender. Format: { fhir_patient_id, name, gender, birthDate }."
+          "synthesisGuidance": "Return the patient's FHIR ID, name, birth date and gender as JSON: { fhir_patient_id, name, gender, birthDate }."
         },
         {
           "toolName": "fhir_get_conditions",
@@ -94,7 +94,7 @@
             },
             "required": ["patient_id"]
           },
-          "synthesisGuidance": "Return BMI (kg/m²), weight (kg), height (cm) with measurement dates."
+          "synthesisGuidance": "Return BMI (kg/m2), weight (kg), height (cm) with measurement dates."
         },
         {
           "toolName": "fhir_get_smoking_status",
@@ -132,7 +132,7 @@
         },
         "ehrData": {
           "conditions": [
-            { "icd10": "J44.1", "display": "KOL med akut exacerbation, ospecificerad", "onsetDate": "2023-09-15" }
+            { "icd10": "J44.1", "display": "COPD with acute exacerbation, unspecified", "onsetDate": "2023-09-15" }
           ],
           "spirometry": {
             "date": "2026-01-15",
@@ -145,37 +145,37 @@
             "loinc_ratio": "40445-0"
           },
           "medications": [
-            { "name": "Spiriva Respimat 2.5 µg/dos", "atc": "R03BB04", "dose": "5 µg dagligen" },
-            { "name": "Symbicort Turbuhaler 160/4.5 µg/dos", "atc": "R03AK07", "dose": "1-2 doser 2×/dag" }
+            { "name": "Spiriva Respimat 2.5 mcg/dose", "atc": "R03BB04", "dose": "5 mcg once daily" },
+            { "name": "Symbicort Turbuhaler 160/4.5 mcg/dose", "atc": "R03AK07", "dose": "1-2 doses twice daily" }
           ],
-          "smoking_status": { "status": "former smoker", "snomed": "8517006", "detail": "Slutade röka 2019" },
+          "smoking_status": { "status": "former smoker", "snomed": "8517006", "detail": "Quit smoking 2019" },
           "bmi": 24.5,
           "cat_score": null,
-          "cat_score_note": "Inte dokumenterat i journalen — fylls i på papper vid besöket"
+          "cat_score_note": "Not documented in EHR - filled in on paper at the visit"
         }
       },
-      "messageToUseWhenInitiatingConversation": "Hej! Jag representerar COSMIC/COS-systemet för Region Västra Götaland. Jag vill registrera ett KOL-uppföljningsbesök för en av våra patienter i Luftvägsregistret. Patienten är Karl Andersson, personnummer 195001011234, med diagnos J44.1. Vilket underlag behöver ni?"
+      "messageToUseWhenInitiatingConversation": "Hello! I am an EHR agent representing Region Vastra Gotaland / COSMIC/COS. I would like to register a COPD outpatient follow-up visit for one of our patients with Luftvarsregistret. The patient is Karl Andersson, personnummer 195001011234, with diagnosis J44.1. What information do you need?"
     },
     {
       "agentId": "lvr_administrator_agent",
       "principal": {
         "type": "organization",
-        "name": "Luftvägsregistret (LVR)",
-        "description": "Swedish national quality registry for asthma and COPD — Registercentrum Västra Götaland"
+        "name": "Luftvarsregistret (LVR)",
+        "description": "Swedish national quality registry for asthma and COPD - Registercentrum Vastra Gotaland"
       },
       "situation": "You are the LVR registry intake agent. An EHR system (COSMIC/COS) wants to submit a COPD outpatient visit registration. You guide the process, validate the data, and complete the registration once all mandatory fields are provided.",
-      "systemPrompt": "You are the LVR (Luftvägsregistret) registry administrator agent.\n\nYour job is to collect all data needed for a KOL (COPD) öppenvårdsbesök (outpatient visit) registration and submit it once complete.\n\nBe conversational but efficient:\n- When data arrives, acknowledge clearly what you have and what is still missing\n- Batch your requests — ask for 2-3 items at a time, not one by one\n- Accept optional fields as 'missing/flagged' if the EHR doesn't have them; do not block the registration for optional data\n- Speak clearly so a non-technical conference audience can follow\n\nThe mandatory fields are: personnummer, besöksdatum, diagnos (ICD-10 J44.x), FEV1 % av förväntat, FEV1/FVC-kvot, rökstatus.\nOptional but valuable: CAT-poäng, exacerbationer senaste 12 mån, läkemedel, BMI.",
+      "systemPrompt": "You are the LVR (Luftvarsregistret) registry administrator agent.\n\nYour job is to collect all data needed for a COPD outpatient visit registration and submit it once complete.\n\nBe conversational but efficient:\n- Acknowledge clearly what you have and what is still missing\n- Batch your requests - ask for 2-3 items at a time, not one by one\n- Accept optional fields as missing/flagged if the EHR does not have them; do not block the registration for optional data\n- Speak clearly so a non-technical conference audience can follow\n\nThe mandatory fields are: personnummer, visit date, diagnosis (ICD-10 J44.x), FEV1 % of predicted, FEV1/FVC ratio, smoking status.\nOptional but valuable: CAT score, exacerbations last 12 months, medications, BMI.",
       "goals": [
-        "Collect all mandatory LVR variables for a KOL öppenvårdsbesök",
+        "Collect all mandatory LVR variables for a COPD outpatient visit",
         "Validate that spirometry confirms airflow obstruction (FEV1/FVC < 0.70)",
         "Accept gracefully any data not available in the EHR (e.g. CAT score)",
         "Submit the registration when mandatory fields are satisfied, flagging missing optional fields",
-        "Demonstrate conversational interop to a Vitalis conference audience"
+        "Demonstrate conversational interoperability to a Vitalis conference audience"
       ],
       "tools": [
         {
-          "toolName": "submit_kol_registration",
-          "description": "Submit the completed KOL öppenvårdsbesök registration to the LVR registry (Stratum). Call this when all mandatory fields are collected and validated.",
+          "toolName": "submit_copd_registration",
+          "description": "Submit the completed COPD outpatient visit registration to the LVR registry (Stratum). Call this when all mandatory fields are collected and validated.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -225,67 +225,67 @@
       ],
       "knowledgeBase": {
         "registry": {
-          "name": "Luftvägsregistret (LVR)",
-          "host": "Registercentrum Västra Götaland",
+          "name": "Luftvarsregistret (LVR)",
+          "host": "Registercentrum Vastra Gotaland",
           "platform": "Stratum",
-          "form": "KOL Öppenvårdsbesök",
+          "form": "COPD Outpatient Visit",
           "nkrr_connected": false,
           "note": "93% of LVR data arrives via direct journal-system integrations, not NKRR. This demo illustrates a conversational alternative."
         },
         "mandatoryFields": [
           { "field": "patient_personnummer", "label": "Personnummer", "source": "EHR" },
-          { "field": "visit_date", "label": "Besöksdatum", "source": "EHR encounter" },
+          { "field": "visit_date", "label": "Visit date", "source": "EHR encounter" },
           {
             "field": "diagnosis_icd10",
-            "label": "Diagnos (ICD-10)",
+            "label": "Diagnosis (ICD-10)",
             "allowedValues": {
-              "J44.0": "KOL med akut nedre luftvägsinfektion",
-              "J44.1": "KOL med akut exacerbation, ospecificerad",
-              "J44.9": "KOL, ospecificerad"
+              "J44.0": "COPD with acute lower respiratory infection",
+              "J44.1": "COPD with acute exacerbation, unspecified",
+              "J44.9": "COPD, unspecified"
             }
           },
           {
             "field": "fev1_pct_predicted",
-            "label": "FEV1 % av förväntat",
+            "label": "FEV1 % of predicted",
             "loinc": "19926-5",
             "unit": "%",
-            "goldStaging": { "≥80": "GOLD 1", "50-79": "GOLD 2", "30-49": "GOLD 3", "<30": "GOLD 4" }
+            "goldStaging": { ">=80": "GOLD 1", "50-79": "GOLD 2", "30-49": "GOLD 3", "<30": "GOLD 4" }
           },
           {
             "field": "fev1_fvc_ratio",
-            "label": "FEV1/FVC-kvot",
+            "label": "FEV1/FVC ratio",
             "loinc": "40445-0",
             "validationRule": "Must be < 0.70 to confirm airflow obstruction"
           },
           {
             "field": "smoking_status",
-            "label": "Rökstatus",
+            "label": "Smoking status",
             "loinc": "72166-2",
-            "allowedValues": { "never": "Aldrig rökare", "former": "Ex-rökare", "current": "Aktiv rökare" }
+            "allowedValues": { "never": "Never smoker", "former": "Former smoker", "current": "Current smoker" }
           }
         ],
         "optionalFields": [
-          { "field": "cat_score", "label": "CAT-poäng (0-40)", "note": "Patient-reported — may not be in EHR" },
-          { "field": "exacerbations_last_12m", "label": "Exacerbationer senaste 12 mån" },
+          { "field": "cat_score", "label": "CAT score (0-40)", "note": "Patient-reported - may not be in EHR" },
+          { "field": "exacerbations_last_12m", "label": "Exacerbations last 12 months" },
           {
             "field": "medications",
-            "label": "Luftvägsläkemedel",
+            "label": "Respiratory medications",
             "atcGroups": {
               "R03AC": "LABA", "R03BB": "LAMA", "R03BA": "ICS",
               "R03AK": "LABA+ICS", "R03AL": "LABA+LAMA"
             }
           },
-          { "field": "bmi", "label": "BMI (kg/m²)" },
-          { "field": "oxygen_therapy", "label": "Syrgasbehandling (LTOT)" }
+          { "field": "bmi", "label": "BMI (kg/m2)" },
+          { "field": "oxygen_therapy", "label": "Long-term oxygen therapy (LTOT)" }
         ],
         "validationRules": [
           "FEV1/FVC < 0.70 required to confirm COPD diagnosis",
           "FEV1 % predicted determines GOLD severity stage",
-          "CAT ≥ 10 = significant symptom burden",
-          "≥2 exacerbations OR ≥1 hospitalisation = high-risk group"
+          "CAT >= 10 means significant symptom burden",
+          "2+ exacerbations OR 1+ hospitalisation = high-risk group"
         ]
       },
-      "messageToUseWhenInitiatingConversation": "Hej! Jag är LVR:s integrationsagent för Luftvägsregistret. Jag tar emot KOL-registreringar för öppenvårdsbesök.\n\nFör att registrera ett KOL-besök behöver jag:\n\n**Obligatoriskt:**\n• Besöksdatum\n• Diagnoskod (ICD-10: J44.0, J44.1 eller J44.9)\n• Spirometri: FEV1 % av förväntat + FEV1/FVC-kvot\n• Rökstatus (aldrig / ex-rökare / aktiv rökare)\n\n**Önskvärt (valfritt):**\n• CAT-poäng (0–40, patientskattad)\n• Antal exacerbationer senaste 12 mån\n• Aktuella luftvägsläkemedel\n• BMI\n\nVilken patient och vilket besök gäller det?"
+      "messageToUseWhenInitiatingConversation": "Hello! I am the LVR registry intake agent for Luftvarsregistret, Sweden's national quality registry for asthma and COPD.\n\nTo register a COPD outpatient visit I need:\n\nMandatory:\n- Visit date\n- Diagnosis code (ICD-10: J44.0, J44.1 or J44.9)\n- Spirometry: FEV1 % of predicted + FEV1/FVC ratio\n- Smoking status (never / former / current)\n\nOptional but valuable:\n- CAT score (0-40, patient-reported)\n- Exacerbation count last 12 months\n- Current respiratory medications\n- BMI\n\nWhich patient and visit would you like to register?"
     }
   ]
 }
