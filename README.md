@@ -1,207 +1,198 @@
 # Conversational Interop Demo — Vitalis 2025
 
-**COSMIC/COS ↔ Luftvägsregistret (LVR)**
+**COSMIC/COS <-> Luftvarsregistret (LVR)**
 
-A live demo of Language-First Interoperability between a Swedish EHR system and a quality registry — no pre-coordinated API integration required. Guided by the [banterop](https://github.com/jmandel/banterop) architecture.
-
----
-
-## What this demo shows
-
-Two AI agents negotiate a quality registry submission in real-time conversation:
-
-```
-┌─────────────────────────────────┐       MCP        ┌──────────────────────────────────┐
-│  APPLICANT AGENT (our code)     │ ◄──────────────► │  ADMINISTRATOR AGENT (banterop)  │
-│                                 │  banterop room   │                                  │
-│  Claude claude-opus-4-6                    │                │  LVR scenario (in browser)       │
-│  + FHIR tools → COS sandbox     │                │  Knows variable definitions,     │
-│  + banterop MCP client          │                │  validation rules, GOLD staging   │
-└───────────────┬─────────────────┘                └──────────────────────────────────┘
-                │
-                ▼
-     COS FHIR R4 API (sandbox)
-     Real patient data: diagnoses,
-     spirometry, medications, vitals,
-     smoking status
-```
-
-**Scenario:** An applicant agent representing a COSMIC/COS EHR registers a COPD (KOL) patient's outpatient visit with Luftvägsregistret. The LVR administrator agent guides the submission, requests missing data conversationally, and completes (or flags) the registration.
-
-**Why Luftvägsregistret?**
-- 100+ structured variables with publicly documented definitions
-- Has a working demo environment (lvr.demo.registercentrum.se)
-- 93 % of data comes via direct journal-system integrations — NOT via NKRR
-- Perfect illustration of the interoperability gap NKRR was meant to solve
+Two AI agents negotiate a quality registry submission in real-time conversation — no pre-built integration required. The EHR agent queries live FHIR data from the COS sandbox; the LVR registry agent knows the variable definitions and validation rules. Guided by the [banterop](https://github.com/jmandel/banterop) architecture.
 
 ---
 
-## Architecture
+## How it works
 
-| Component | Technology |
-|-----------|-----------|
-| Applicant agent | TypeScript + Bun, `@anthropic-ai/sdk` (Claude claude-opus-4-6) |
-| FHIR client | COS FHIR R4 API, OAuth2 client credentials |
-| MCP transport | `@modelcontextprotocol/sdk` Streamable HTTP → banterop |
-| Administrator agent | banterop scenario (runs in browser) |
-| Scenario format | Banterop `ScenarioConfiguration` JSON |
+```
+Terminal (our code)                         Browser (banterop)
+───────────────────────────────────         ───────────────────────────────
+Applicant Agent                             LVR Administrator Agent
+  Claude claude-opus-4-6 orchestrates                 Scenario: lvr-kol-outpatient-v1
+  |                                           Knows: mandatory fields, GOLD
+  +-- FHIR tools ──> COS FHIR R4 API          staging, ATC groups, rules
+  +-- MCP <──────────────────────────────> banterop room
+```
 
 ---
 
 ## Prerequisites
 
-- COS sandbox credentials från [developer.openservices.cambio.se](https://developer.openservices.cambio.se)
+- Docker + Docker Compose
+- COS (Cambio Open Services) client credentials — [developer.openservices.cambio.se](https://developer.openservices.cambio.se)
 - Anthropic API key
-- Docker + Docker Compose **eller** [Bun](https://bun.sh) ≥ 1.2 (lokal utveckling)
 
 ---
 
-## Snabbstart med Docker (rekommenderat för demo)
+## Setup — hosted banterop.fhir.me (recommended)
 
-### Alternativ A — Helt lokalt (ingen internet under demo)
-
-Kräver Docker och att banterop-submodulen är hämtad.
+### Step 1 — Clone
 
 ```bash
-# 1. Hämta banterop-submodulen
-git submodule update --init --recursive
-
-# 2. Konfigurera miljövariabler
-cp .env.example .env
-# Fyll i COS_CLIENT_ID, COS_CLIENT_SECRET, ANTHROPIC_API_KEY
-# För lokal banterop, lägg till LLM-nyckel för administratörsagenten:
-#   BANTEROP_LLM_PROVIDER=openrouter
-#   OPENROUTER_API_KEY=sk-or-...
-# (eller GOOGLE_API_KEY för Gemini)
-
-# 3. Starta banterop
-docker compose --profile local up banterop -d
-
-# 4. Ladda upp LVR-scenariot
-docker compose --profile local run --rm agent-tools scripts/upload-scenario.ts
-
-# 5. Skapa testpatient i COS
-docker compose --profile local run --rm agent-tools scripts/setup-test-patient.ts
-
-# 6. Öppna banterop i webbläsaren, skapa ett rum med LVR-scenariot, kopiera room-ID
-open http://localhost:3000
-
-# 7. Kör agenten
-docker compose --profile local run --rm agent --room=<roomId>
+git clone --recurse-submodules <repo-url>
+cd coin-demo
 ```
 
-### Alternativ B — Agent lokalt, banterop hostad (banterop.fhir.me)
+### Step 2 — Configure
 
 ```bash
 cp .env.example .env
-# Fyll i COS_*, ANTHROPIC_API_KEY, BANTEROP_ROOM_ID
+```
 
-# Skapa testpatient
+Fill in `.env`:
+
+```
+COS_FHIR_BASE_URL=https://...
+COS_TOKEN_URL=https://...
+COS_CLIENT_ID=...
+COS_CLIENT_SECRET=...
+ANTHROPIC_API_KEY=...
+```
+
+### Step 3 — Create test patient in COS
+
+```bash
 docker compose --profile hosted run --rm agent-tools-hosted scripts/setup-test-patient.ts
-
-# Ladda upp scenario (kräver BANTEROP_EDIT_TOKEN om published)
-docker compose --profile hosted run --rm agent-tools-hosted scripts/upload-scenario.ts
-
-# Kör agenten
-docker compose --profile hosted run --rm agent-hosted --room=<roomId>
 ```
 
----
+Creates **Karl Andersson** (personnummer `195001011234`) with:
+- Diagnosis J44.1 (COPD with acute exacerbation)
+- Spirometry: FEV1 62% predicted, FEV1/FVC 0.58 → GOLD 2 (Moderate)
+- Medications: Spiriva (LAMA) + Symbicort (LABA+ICS)
+- Former smoker (quit 2019), BMI 24.5
 
-## Setup utan Docker (Bun direkt)
-
-### 1. Installera beroenden
-
-```bash
-bun install
-```
-
-### 2. Konfigurera miljövariabler
-
-```bash
-cp .env.example .env
-# Edit .env and fill in:
-#   COS_FHIR_BASE_URL, COS_TOKEN_URL, COS_CLIENT_ID, COS_CLIENT_SECRET
-#   ANTHROPIC_API_KEY
-#   BANTEROP_URL (default: https://banterop.fhir.me)
-```
-
-### 3. Skapa testpatient i COS
-
-```bash
-bun run setup-patient --dry-run   # förhandsgranskning
-bun run setup-patient             # skapa i COS sandbox
-```
-
-Skapar **Karl Andersson** (personnummer `195001011234`):
-- Diagnos J44.1 (KOL med akut exacerbation)
-- Spirometri: FEV1 62 % av förväntat, FEV1/FVC 0.58 → GOLD 2 (Moderate)
-- Läkemedel: Spiriva (LAMA) + Symbicort (LABA+ICS)
-- Ex-rökare (slutade 2019), BMI 24.5
-
-### 4. Ladda upp LVR-scenariot till banterop
-
-```bash
-bun run upload-scenario --dry-run    # validera JSON
-bun run upload-scenario              # ladda upp
-```
-
-Scenariot (`scenarios/lvr-kol-registration.json`) definierar LVR-administratörsagenten: obligatoriska/valfria fält, GOLD-klassificering, ATC-läkemedelsgrupper och valideringsregler.
-
-### 5. Create a banterop room
+### Step 4 — Create a banterop room
 
 1. Open [banterop.fhir.me](https://banterop.fhir.me) in a browser
-2. Go to **Scenarios** → find `lvr-kol-outpatient-v1`
-3. Click **Create room** — this generates a room ID (e.g. `abc-123-xyz`)
-4. Add to `.env`: `BANTEROP_ROOM_ID=abc-123-xyz`
+2. Go to **Scenarios** — create a new scenario and paste in the contents of `scenarios/lvr-kol-registration.json`
+3. Go to **Scenarios → lvr-kol-outpatient-v1 → Run**
+4. Configure the room:
+   - **Step 1:** Choose `ehr_applicant_agent` (this is the agent our code provides)
+   - **Step 2:** Choose **I have a Client**
+   - **Step 3:** Choose **MCP Protocol**
+   - **Step 4:** banterop will simulate `lvr_administrator_agent`
+5. Click **Open Client & Connect** — a room URL is generated
+6. Copy the room ID from the URL (e.g. `abc-123-xyz`)
+
+### Step 5 — Add room ID to .env
+
+```
+BANTEROP_ROOM_ID=abc-123-xyz
+```
+
+### Step 6 — Run the demo
+
+Open two windows side by side:
+
+**Window 1 — Browser**
+```
+https://banterop.fhir.me/rooms/<room-id>
+```
+The LVR agent's reasoning and tool calls are visible here in real time.
+
+**Window 2 — Terminal**
+```bash
+docker compose --profile hosted run --rm agent-hosted --room=<room-id>
+```
+
+The terminal shows FHIR queries to COS in blue and LVR messages in green.
 
 ---
 
-## Köra demon
+## Setup — fully local Docker (no internet during demo)
 
-Öppna **två skärmar** bredvid varandra:
+### Step 1 — Clone and fetch submodule
 
-**Skärm 1 — LVR-administratör (banterop i webbläsare)**
-```
-# Lokal Docker:
-http://localhost:3000/rooms/<room-id>
-
-# Hostad:
-https://banterop.fhir.me/rooms/<room-id>
-```
-LVR-agentens tankekedja och verktygsanrop visas här i realtid — bra för publik.
-
-**Skärm 2 — Applicant agent (terminal)**
 ```bash
-# Docker (lokal):
-docker compose --profile local run --rm agent --room=abc-123-xyz --patient=195001011234
-
-# Docker (hostad):
-docker compose --profile hosted run --rm agent-hosted --room=abc-123-xyz
-
-# Bun direkt:
-bun run agent --room=abc-123-xyz --patient=195001011234
+git clone --recurse-submodules <repo-url>
+cd coin-demo
+# If already cloned without --recurse-submodules:
+git submodule update --init
 ```
 
-Terminalen visar FHIR-anrop mot COS i blått, LVR-meddelanden i grönt.
+The nested `a2a` submodule inside banterop is fetched automatically during Docker build — no need for `--recursive`.
+
+### Step 2 — Configure
+
+```bash
+cp .env.example .env
+```
+
+Fill in `.env` — in addition to COS and Anthropic keys, add an LLM key for the local banterop instance:
+
+```
+COS_FHIR_BASE_URL=https://...
+COS_TOKEN_URL=https://...
+COS_CLIENT_ID=...
+COS_CLIENT_SECRET=...
+ANTHROPIC_API_KEY=...
+
+BANTEROP_LLM_PROVIDER=google
+GOOGLE_API_KEY=...
+# or: BANTEROP_LLM_PROVIDER=openrouter + OPENROUTER_API_KEY=...
+```
+
+### Step 3 — Start banterop
+
+```bash
+docker compose --profile local up banterop -d
+```
+
+First run takes a few minutes (builds banterop and clones the a2a spec).
+
+### Step 4 — Create banterop room
+
+1. Open [http://localhost:3000](http://localhost:3000) in a browser
+2. Create a scenario — paste in `scenarios/lvr-kol-registration.json`
+3. Go to **Scenarios → lvr-kol-outpatient-v1 → Run**
+4. Configure: `ehr_applicant_agent` / I have a Client / MCP Protocol
+5. Copy the room ID
+
+### Step 5 — Create test patient in COS
+
+```bash
+docker compose --profile local run --rm agent-tools scripts/setup-test-patient.ts
+```
+
+### Step 6 — Add room ID to .env
+
+```
+BANTEROP_ROOM_ID=abc-123-xyz
+```
+
+### Step 7 — Run the demo
+
+**Window 1 — Browser**
+```
+http://localhost:3000/rooms/<room-id>
+```
+
+**Window 2 — Terminal**
+```bash
+docker compose --profile local run --rm agent --room=<room-id>
+```
 
 ---
 
 ## Demo narrative (Vitalis script)
 
-1. **Setup** (~1 min): "We have a patient with COPD. The region's EHR has their data in COS. The quality registry needs a specific set of variables. Normally this would require a custom integration. Today we'll do it with conversation."
+1. **Setup** (~1 min): "A patient with COPD has just had an outpatient visit. The EHR has their data. The quality registry needs a specific set of variables. Normally this requires a custom integration that takes months. Today we will do it with conversation."
 
-2. **Agent starts** (~30 s): Applicant agent finds the patient, opens chat with LVR admin.
+2. **Agent starts** (~30 s): Applicant agent looks up the patient in COS, opens the chat with the LVR admin agent.
 
-3. **LVR requests data** (~1 min): LVR admin lists what it needs. Audience sees the structured knowledge base in action.
+3. **LVR requests data** (~1 min): LVR lists what it needs — audience sees the registry's structured knowledge base in action.
 
-4. **FHIR queries** (~1 min): Applicant queries spirometry, medications, smoking status. Audience sees real FHIR API calls.
+4. **FHIR queries** (~1 min): Applicant queries spirometry, medications, smoking status from COS. Audience sees real FHIR API calls.
 
-5. **CAT score gap** (~30 s): LVR asks for CAT score. Applicant reports it's not in the EHR. LVR accepts with a flag — *this is the interesting moment*: conversational negotiation of what's available vs required.
+5. **CAT score gap** (~30 s): LVR asks for CAT score. Applicant reports it is not in the EHR (it was filled in on paper). LVR accepts with a flag. *This is the key moment* — conversational negotiation of what is available vs what is required.
 
-6. **Registration complete**: LVR submits. Shows completeness summary with flags.
+6. **Registration complete**: LVR submits with a completeness summary showing what was registered and what was flagged.
 
-7. **Discussion**: "This is what NKRR should enable — but most registers aren't there yet. This demo shows what's possible today, today."
+7. **Discussion**: "This is what NKRR was meant to enable — but most registers are not connected yet. This demo shows what is possible today."
 
 ---
 
@@ -210,25 +201,30 @@ Terminalen visar FHIR-anrop mot COS i blått, LVR-meddelanden i grönt.
 ```
 coin-demo/
 ├── src/
-│   ├── cos-client.ts          # OAuth2 + FHIR R4 client for COS
-│   ├── fhir-tools.ts          # Tool definitions + implementations (7 tools)
-│   └── applicant-agent.ts     # Claude-based orchestrator (main entry point)
+│   ├── cos-client.ts           # OAuth2 + FHIR R4 client for COS
+│   ├── fhir-tools.ts           # 7 FHIR tools (patient, conditions, medications,
+│   │                           #   spirometry, vitals, smoking, encounters)
+│   └── applicant-agent.ts      # Claude orchestrator — main entry point
 ├── scenarios/
-│   └── lvr-kol-registration.json  # Banterop scenario for LVR admin agent
+│   └── lvr-kol-registration.json  # Banterop scenario (both agents defined)
 ├── scripts/
-│   ├── upload-scenario.ts     # Upload scenario to banterop
-│   └── setup-test-patient.ts  # Create synthetic KOL patient in COS sandbox
-├── .env.example
-├── package.json
-└── tsconfig.json
+│   ├── setup-test-patient.ts   # Create Karl Andersson in COS sandbox
+│   └── upload-scenario.ts      # Upload scenario to banterop via API
+├── docker/
+│   └── banterop.Dockerfile     # Custom build that fetches a2a during Docker build
+├── vendor/
+│   └── banterop/               # Banterop git submodule
+├── docker-compose.yml          # Profiles: local, hosted
+├── Dockerfile                  # Applicant agent container
+└── .env.example
 ```
 
 ---
 
-## Key FHIR codes used
+## Key FHIR codes
 
-| Variable | Code system | Code |
-|----------|------------|------|
+| Variable | System | Code |
+|----------|--------|------|
 | FEV1 measured | LOINC | 20150-9 |
 | FEV1 % predicted | LOINC | 19926-5 |
 | FVC measured | LOINC | 19868-9 |
@@ -243,9 +239,7 @@ coin-demo/
 
 ## References
 
-- [banterop — Conversational Interoperability Testbed](https://github.com/jmandel/banterop)
-- [LVR — Luftvägsregistret](https://lvr.registercentrum.se)
-- [LVR Demo environment](https://lvr.demo.registercentrum.se/)
+- [banterop](https://github.com/jmandel/banterop) — Conversational Interoperability Testbed
+- [LVR — Luftvarsregistret](https://lvr.registercentrum.se)
 - [COS — Cambio Open Services](https://developer.openservices.cambio.se)
-- [SKR Informationsspecifikationer for quality registries](https://skr.se/kvalitetsregister)
-- [NKRR — Nationell källa för regionala rapporter](https://inera.se/nkrr)
+- [NKRR — Nationell kalla for regionala rapporter](https://inera.se/nkrr)
