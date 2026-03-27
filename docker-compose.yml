@@ -37,7 +37,7 @@ services:
     profiles: [local]
     build:
       context: ./vendor/banterop
-      dockerfile: Dockerfile
+      dockerfile: ../../docker/banterop.Dockerfile
     ports:
       - "3000:3000"
     environment:
