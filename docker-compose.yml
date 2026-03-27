@@ -1,0 +1,137 @@
+# Conversational Interop Demo — Docker Compose
+#
+# Två lägen:
+#
+#   1. Helt lokalt (ingen internetanslutning behövs under demo):
+#        git submodule update --init --recursive   # (första gången)
+#        docker compose --profile local up
+#
+#   2. Mot hosted banterop.fhir.me (snabbare setup, kräver internet):
+#        docker compose --profile hosted up
+#
+# Kör agenten:
+#   docker compose run --rm agent --room=<roomId> --patient=195001011234
+#
+# Setup-scripts:
+#   docker compose run --rm agent-tools upload-scenario
+#   docker compose run --rm agent-tools setup-patient
+
+x-agent-env: &agent-env
+  env_file: .env
+  environment:
+    # Överskrid BANTEROP_URL beroende på profil (se nedan)
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
+    COS_TOKEN_URL: ${COS_TOKEN_URL}
+    COS_CLIENT_ID: ${COS_CLIENT_ID}
+    COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
+    COS_SCOPE: ${COS_SCOPE:-}
+    DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
+    BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+
+services:
+  # ── Lokal banterop (profil: local) ─────────────────────────────────────────
+  # Byggs från git-submodulen vendor/banterop.
+  # Kör: git submodule update --init --recursive
+  banterop:
+    profiles: [local]
+    build:
+      context: ./vendor/banterop
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      BASE_URL: "http://localhost:3000"
+      BANTEROP_DB: /data/banterop.db
+      DEFAULT_LLM_PROVIDER: ${BANTEROP_LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      PUBLISHED_EDIT_TOKEN: ${BANTEROP_EDIT_TOKEN:-}
+    volumes:
+      - banterop_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ── Applicant agent mot lokal banterop ─────────────────────────────────────
+  agent:
+    profiles: [local]
+    build: .
+    <<: *agent-env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
+      COS_TOKEN_URL: ${COS_TOKEN_URL}
+      COS_CLIENT_ID: ${COS_CLIENT_ID}
+      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
+      COS_SCOPE: ${COS_SCOPE:-}
+      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
+      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      BANTEROP_URL: "http://banterop:3000"
+    depends_on:
+      banterop:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+
+  # ── Setup-script container (lokal banterop) ─────────────────────────────────
+  agent-tools:
+    profiles: [local]
+    build: .
+    <<: *agent-env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
+      COS_TOKEN_URL: ${COS_TOKEN_URL}
+      COS_CLIENT_ID: ${COS_CLIENT_ID}
+      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
+      COS_SCOPE: ${COS_SCOPE:-}
+      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
+      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      BANTEROP_URL: "http://banterop:3000"
+    depends_on:
+      banterop:
+        condition: service_healthy
+    entrypoint: ["bun", "run"]
+
+  # ── Applicant agent mot hosted banterop.fhir.me ────────────────────────────
+  agent-hosted:
+    profiles: [hosted]
+    build: .
+    <<: *agent-env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
+      COS_TOKEN_URL: ${COS_TOKEN_URL}
+      COS_CLIENT_ID: ${COS_CLIENT_ID}
+      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
+      COS_SCOPE: ${COS_SCOPE:-}
+      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
+      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      BANTEROP_URL: "https://banterop.fhir.me"
+    stdin_open: true
+    tty: true
+
+  # ── Setup-scripts mot hosted banterop ──────────────────────────────────────
+  agent-tools-hosted:
+    profiles: [hosted]
+    build: .
+    <<: *agent-env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
+      COS_TOKEN_URL: ${COS_TOKEN_URL}
+      COS_CLIENT_ID: ${COS_CLIENT_ID}
+      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
+      COS_SCOPE: ${COS_SCOPE:-}
+      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
+      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      BANTEROP_URL: "https://banterop.fhir.me"
+    entrypoint: ["bun", "run"]
+
+volumes:
+  banterop_data:

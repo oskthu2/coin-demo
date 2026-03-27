@@ -1,0 +1,3 @@
+[submodule "vendor/banterop"]
+	path = vendor/banterop
+	url = https://github.com/jmandel/banterop

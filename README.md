@@ -50,22 +50,73 @@ Two AI agents negotiate a quality registry submission in real-time conversation:
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.2
-- COS sandbox credentials from [developer.openservices.cambio.se](https://developer.openservices.cambio.se)
+- COS sandbox credentials från [developer.openservices.cambio.se](https://developer.openservices.cambio.se)
 - Anthropic API key
-- Access to [banterop.fhir.me](https://banterop.fhir.me) (or run banterop locally)
+- Docker + Docker Compose **eller** [Bun](https://bun.sh) ≥ 1.2 (lokal utveckling)
 
 ---
 
-## Setup
+## Snabbstart med Docker (rekommenderat för demo)
 
-### 1. Install dependencies
+### Alternativ A — Helt lokalt (ingen internet under demo)
+
+Kräver Docker och att banterop-submodulen är hämtad.
+
+```bash
+# 1. Hämta banterop-submodulen
+git submodule update --init --recursive
+
+# 2. Konfigurera miljövariabler
+cp .env.example .env
+# Fyll i COS_CLIENT_ID, COS_CLIENT_SECRET, ANTHROPIC_API_KEY
+# För lokal banterop, lägg till LLM-nyckel för administratörsagenten:
+#   BANTEROP_LLM_PROVIDER=openrouter
+#   OPENROUTER_API_KEY=sk-or-...
+# (eller GOOGLE_API_KEY för Gemini)
+
+# 3. Starta banterop
+docker compose --profile local up banterop -d
+
+# 4. Ladda upp LVR-scenariot
+docker compose --profile local run --rm agent-tools scripts/upload-scenario.ts
+
+# 5. Skapa testpatient i COS
+docker compose --profile local run --rm agent-tools scripts/setup-test-patient.ts
+
+# 6. Öppna banterop i webbläsaren, skapa ett rum med LVR-scenariot, kopiera room-ID
+open http://localhost:3000
+
+# 7. Kör agenten
+docker compose --profile local run --rm agent --room=<roomId>
+```
+
+### Alternativ B — Agent lokalt, banterop hostad (banterop.fhir.me)
+
+```bash
+cp .env.example .env
+# Fyll i COS_*, ANTHROPIC_API_KEY, BANTEROP_ROOM_ID
+
+# Skapa testpatient
+docker compose --profile hosted run --rm agent-tools-hosted scripts/setup-test-patient.ts
+
+# Ladda upp scenario (kräver BANTEROP_EDIT_TOKEN om published)
+docker compose --profile hosted run --rm agent-tools-hosted scripts/upload-scenario.ts
+
+# Kör agenten
+docker compose --profile hosted run --rm agent-hosted --room=<roomId>
+```
+
+---
+
+## Setup utan Docker (Bun direkt)
+
+### 1. Installera beroenden
 
 ```bash
 bun install
 ```
 
-### 2. Configure environment
+### 2. Konfigurera miljövariabler
 
 ```bash
 cp .env.example .env
@@ -75,27 +126,27 @@ cp .env.example .env
 #   BANTEROP_URL (default: https://banterop.fhir.me)
 ```
 
-### 3. Create a synthetic test patient in COS
+### 3. Skapa testpatient i COS
 
 ```bash
-bun run setup-patient --dry-run   # preview what will be created
-bun run setup-patient             # create in COS sandbox
+bun run setup-patient --dry-run   # förhandsgranskning
+bun run setup-patient             # skapa i COS sandbox
 ```
 
-This creates **Karl Andersson** (personnummer `195001011234`) with:
-- Diagnosis J44.1 (COPD with exacerbation)
-- Spirometry: FEV1 62 % predicted, FEV1/FVC 0.58 → GOLD 2 (Moderate)
-- Medications: Spiriva (LAMA) + Symbicort (LABA+ICS)
-- Former smoker (quit 2019), BMI 24.5
+Skapar **Karl Andersson** (personnummer `195001011234`):
+- Diagnos J44.1 (KOL med akut exacerbation)
+- Spirometri: FEV1 62 % av förväntat, FEV1/FVC 0.58 → GOLD 2 (Moderate)
+- Läkemedel: Spiriva (LAMA) + Symbicort (LABA+ICS)
+- Ex-rökare (slutade 2019), BMI 24.5
 
-### 4. Upload the LVR scenario to banterop
+### 4. Ladda upp LVR-scenariot till banterop
 
 ```bash
-bun run upload-scenario --dry-run    # validate scenario JSON
-bun run upload-scenario              # upload to banterop
+bun run upload-scenario --dry-run    # validera JSON
+bun run upload-scenario              # ladda upp
 ```
 
-The scenario (`scenarios/lvr-kol-registration.json`) defines the LVR administrator agent: its knowledge of mandatory/optional variables, GOLD staging, ATC medication categories, validation rules, and conversational goals.
+Scenariot (`scenarios/lvr-kol-registration.json`) definierar LVR-administratörsagenten: obligatoriska/valfria fält, GOLD-klassificering, ATC-läkemedelsgrupper och valideringsregler.
 
 ### 5. Create a banterop room
 
@@ -106,24 +157,33 @@ The scenario (`scenarios/lvr-kol-registration.json`) defines the LVR administrat
 
 ---
 
-## Running the demo
+## Köra demon
 
-Open **two screens** side by side:
+Öppna **två skärmar** bredvid varandra:
 
-**Screen 1 — LVR administrator (banterop browser)**
+**Skärm 1 — LVR-administratör (banterop i webbläsare)**
 ```
-https://banterop.fhir.me/rooms/<your-room-id>
-```
-The LVR agent's thinking and tool calls are visible here in real-time.
+# Lokal Docker:
+http://localhost:3000/rooms/<room-id>
 
-**Screen 2 — Applicant agent (terminal)**
+# Hostad:
+https://banterop.fhir.me/rooms/<room-id>
+```
+LVR-agentens tankekedja och verktygsanrop visas här i realtid — bra för publik.
+
+**Skärm 2 — Applicant agent (terminal)**
 ```bash
-bun run agent
-# or explicitly:
+# Docker (lokal):
+docker compose --profile local run --rm agent --room=abc-123-xyz --patient=195001011234
+
+# Docker (hostad):
+docker compose --profile hosted run --rm agent-hosted --room=abc-123-xyz
+
+# Bun direkt:
 bun run agent --room=abc-123-xyz --patient=195001011234
 ```
 
-Watch the agents negotiate. The terminal shows FHIR queries to COS in blue, LVR messages in green.
+Terminalen visar FHIR-anrop mot COS i blått, LVR-meddelanden i grönt.
 
 ---
 
