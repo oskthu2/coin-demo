@@ -78,7 +78,7 @@ services:
     stdin_open: true
     tty: true
 
-  # ── Setup-script container (lokal banterop) ─────────────────────────────────
+  # ── Setup-script container (ingen banterop-beroende — pratar bara med COS) ──
   agent-tools:
     profiles: [local]
     build: .
@@ -93,9 +93,6 @@ services:
       DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
       BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
       BANTEROP_URL: "http://banterop:3000"
-    depends_on:
-      banterop:
-        condition: service_healthy
     entrypoint: ["bun", "run"]
 
   # ── Applicant agent mot hosted banterop.fhir.me ────────────────────────────
