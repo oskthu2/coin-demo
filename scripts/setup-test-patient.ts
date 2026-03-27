@@ -21,6 +21,12 @@ import { cosClientFromEnv } from "../src/cos-client.js";
 const DRY_RUN = process.argv.includes("--dry-run");
 const PERSONNUMMER = "195001011234"; // Karl Andersson
 
+// Allow bypassing patient lookup: --patient-id=<fhir-id>
+const FORCED_PATIENT_ID = (() => {
+  const arg = process.argv.find(a => a.startsWith("--patient-id="));
+  return arg ? arg.split("=")[1] : null;
+})();
+
 // ISO timestamp helpers
 const today = new Date().toISOString().slice(0, 10);
 const monthsAgo = (n: number) => {
@@ -95,75 +101,79 @@ function makeObs(
   };
 }
 
-async function findOrCreatePatient(cos: ReturnType<typeof cosClientFromEnv>): Promise<string> {
-  // Try several identifier systems used for Swedish personnummer
-  const systems = [
-    `http://electronichealth.se/identifier/patient|${PERSONNUMMER}`,
-    `urn:oid:1.2.752.129.2.1.3.1|${PERSONNUMMER}`,
-    PERSONNUMMER,
-  ];
+type PatientEntry = { resource: { id: string; name?: unknown; birthDate?: string; identifier?: unknown } };
 
-  for (const identifier of systems) {
-    try {
-      const bundle = await cos.fhirGet<{ entry?: Array<{ resource: { id: string } }> }>(
-        "Patient",
-        { identifier }
-      );
-      const id = bundle.entry?.[0]?.resource?.id;
-      if (id) {
-        console.log(`  Found existing patient (identifier: ${identifier})`);
-        return id;
-      }
-    } catch (e) {
-      console.log(`    [debug] identifier search failed: ${e instanceof Error ? e.message : e}`);
-    }
-  }
-
-  // Also try by birthdate
+async function trySearch(
+  cos: ReturnType<typeof cosClientFromEnv>,
+  params: Record<string, string>,
+  label: string
+): Promise<string | null> {
   try {
-    const byBirth = await cos.fhirGet<{ entry?: Array<{ resource: { id: string } }> }>(
-      "Patient",
-      { birthdate: "1950-01-01" }
-    );
-    const id = byBirth.entry?.[0]?.resource?.id;
+    const bundle = await cos.fhirGet<{ entry?: Array<PatientEntry> }>("Patient", params);
+    const id = bundle.entry?.[0]?.resource?.id;
     if (id) {
-      console.log(`  Found existing patient by birthdate`);
+      console.log(`  Found existing patient via ${label} (id: ${id})`);
       return id;
     }
+    return null;
   } catch (e) {
-    console.log(`    [debug] birthdate search failed: ${e instanceof Error ? e.message : e}`);
+    console.log(`    [debug] ${label} failed: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+    return null;
+  }
+}
+
+async function listSandboxPatients(cos: ReturnType<typeof cosClientFromEnv>): Promise<void> {
+  // Try several search strategies to list available patients
+  const attempts: Array<[Record<string, string>, string]> = [
+    [{ family: "Andersson" }, "family=Andersson"],
+    [{ family: "Test" }, "family=Test"],
+    [{ family: "Patient" }, "family=Patient"],
+    [{ name: "Karl" }, "name=Karl"],
+  ];
+
+  for (const [params, label] of attempts) {
+    try {
+      const bundle = await cos.fhirGet<{ entry?: Array<PatientEntry> }>("Patient", params);
+      if (bundle.entry?.length) {
+        console.log(`  Patients found (${label}):`);
+        for (const e of bundle.entry) {
+          const r = e.resource;
+          console.log(`    id=${r.id}  birthDate=${r.birthDate ?? "?"}  name=${JSON.stringify(r.name ?? "?")}`);
+        }
+        return;
+      }
+    } catch {
+      // try next
+    }
+  }
+  console.log("  Could not list sandbox patients — no supported search parameter found.");
+  console.log("  Log into the COS developer portal to find a test patient ID.");
+}
+
+async function findOrCreatePatient(cos: ReturnType<typeof cosClientFromEnv>): Promise<string> {
+  // Identifier systems recognised by COS for personnummer
+  const identifierSearches: Array<[Record<string, string>, string]> = [
+    [{ identifier: `urn:oid:1.2.752.129.2.1.3.1|${PERSONNUMMER}` }, "OID identifier"],
+    [{ identifier: PERSONNUMMER }, "bare identifier"],
+  ];
+
+  for (const [params, label] of identifierSearches) {
+    const id = await trySearch(cos, params, label);
+    if (id) return id;
   }
 
-  // Not found — try to create
+  // Try to create
   console.log("  Not found, attempting to create…");
   try {
     const created = await cos.fhirPost<{ id: string }>("Patient", patientResource);
     if (created.id) return created.id;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // If sandbox rejects creation, list available patients so user can pick one
     console.error(`  Could not create patient: ${msg}`);
-    console.log("\n  Listing available patients in sandbox…");
-    try {
-      // Try searching by birthdate (more likely to be supported than a bare list)
-      const all = await cos.fhirGet<{ entry?: Array<{ resource: { id: string; name?: unknown; birthDate?: string; identifier?: unknown } }> }>(
-        "Patient",
-        { birthdate: "1950-01-01" }
-      );
-      if (all.entry?.length) {
-        console.log("  Available patients:");
-        for (const e of all.entry) {
-          const r = e.resource;
-          console.log(`    id=${r.id}  birthDate=${r.birthDate ?? "?"}  name=${JSON.stringify(r.name ?? "?")}`);
-        }
-        console.log("\n  Pick one and set DEFAULT_PERSONNUMMER or pass --patient=<id> when running the agent.");
-        console.log("  Then re-run this script with --patient-id=<id> to attach clinical data to an existing patient.");
-      } else {
-        console.log("  No patients found. Check your COS_API_KEY and COS credentials.");
-      }
-    } catch (listErr) {
-      console.error("  Could not list patients:", listErr);
-    }
+    console.log("\n  The COS sandbox appears to be read-only for Patient resources.");
+    console.log("  Re-run with --patient-id=<FHIR-id> to attach clinical data to an existing patient.\n");
+    console.log("  Searching for available sandbox patients…");
+    await listSandboxPatients(cos);
     process.exit(1);
   }
 
@@ -196,9 +206,15 @@ async function main() {
   const cos = cosClientFromEnv();
 
   // 1. Find or create patient
-  // COS sandbox often has pre-existing test patients — search first.
-  console.log("Looking up Patient…");
-  const pid = await findOrCreatePatient(cos);
+  let pid: string;
+  if (FORCED_PATIENT_ID) {
+    pid = FORCED_PATIENT_ID;
+    console.log(`Using forced patient ID: ${pid}\n`);
+  } else {
+    // COS sandbox often has pre-existing test patients — search first.
+    console.log("Looking up Patient…");
+    pid = await findOrCreatePatient(cos);
+  }
   console.log(`  ✓ Using patient — FHIR ID: ${pid}\n`);
 
   // 2. COPD diagnosis
