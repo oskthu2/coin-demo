@@ -1,0 +1,21 @@
+{
+  "name": "coin-demo",
+  "version": "0.1.0",
+  "description": "Conversational Interoperability Demo — COSMIC/COS ↔ Luftvägsregistret (Vitalis)",
+  "type": "module",
+  "scripts": {
+    "agent": "bun run src/applicant-agent.ts",
+    "upload-scenario": "bun run scripts/upload-scenario.ts",
+    "setup-patient": "bun run scripts/setup-test-patient.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
