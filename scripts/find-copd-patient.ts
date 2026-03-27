@@ -24,25 +24,41 @@ const LOINC_SPIROMETRY = ["20150-9", "19926-5", "19868-9", "40445-0"];
 
 const cos = cosClientFromEnv();
 
-async function searchConditionsByCode(code: string): Promise<Array<{ patientRef: string; icd10: string; display: string }>> {
+async function conditionsForPatient(patientId: string): Promise<Array<{ icd10: string; display: string }>> {
   try {
     const bundle = await cos.fhirGet<FhirBundle>("Condition", {
-      code: `http://hl7.org/fhir/sid/icd-10|${code}`,
+      subject: `Patient/${patientId}`,
     });
     return (bundle.entry ?? []).map(({ resource: r }) => {
       const cond = r as Record<string, unknown>;
-      const subject = (cond.subject as Record<string, unknown>)?.reference as string ?? "";
       const coding = ((cond.code as Record<string, unknown>)?.coding as Array<Record<string, unknown>>)?.[0];
       return {
-        patientRef: subject,
-        icd10: coding?.code as string ?? code,
+        icd10: coding?.code as string ?? "?",
         display: coding?.display as string ?? "",
       };
-    }).filter(c => c.patientRef);
-  } catch (e) {
-    console.error(`  [warn] Condition search for ${code} failed: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+    });
+  } catch {
     return [];
   }
+}
+
+async function patientsFromObservations(loincCode: string): Promise<Set<string>> {
+  const patientIds = new Set<string>();
+  try {
+    const bundle = await cos.fhirGet<FhirBundle>("Observation", {
+      code: loincCode,
+      status: "final",
+    });
+    for (const { resource: r } of bundle.entry ?? []) {
+      const obs = r as Record<string, unknown>;
+      const ref = (obs.subject as Record<string, unknown>)?.reference as string ?? "";
+      const id = ref.replace("Patient/", "");
+      if (id) patientIds.add(id);
+    }
+  } catch (e) {
+    console.error(`  [warn] Observation search for ${loincCode} failed: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+  }
+  return patientIds;
 }
 
 async function fetchPatient(patientRef: string): Promise<Record<string, unknown> | null> {
@@ -80,81 +96,100 @@ async function fetchSpirometry(patientId: string): Promise<Array<{ code: string;
   }
 }
 
-async function main() {
-  console.log("COS Sandbox — COPD/Lung Patient Explorer");
-  console.log("==========================================");
-  console.log(`Searching ICD-10 codes: ${ICD10_CODES.join(", ")}\n`);
+async function printPatient(pid: string) {
+  const p = await fetchPatient(`Patient/${pid}`);
+  if (!p) { console.log(`  Patient/${pid}: could not fetch`); return; }
 
-  // 1. Collect all condition hits
-  const condHits: Array<{ patientRef: string; icd10: string; display: string }> = [];
-  for (const code of ICD10_CODES) {
-    process.stdout.write(`Searching Condition?code=J${code.replace(/^J/, "")}… `);
-    const hits = await searchConditionsByCode(code);
-    console.log(`${hits.length} hits`);
-    condHits.push(...hits);
+  const nameArr = p.name as Array<Record<string, unknown>> | undefined;
+  const name0 = nameArr?.[0];
+  const name = `${((name0?.given as string[]) ?? []).join(" ")} ${name0?.family ?? ""}`.trim();
+  const birth = p.birthDate as string ?? "?";
+  const idArr = p.identifier as Array<Record<string, unknown>> | undefined;
+  const pnr = idArr?.map(i => i.value as string).find(v => v?.length >= 10) ?? "";
+
+  console.log(`\nPatient ${pid}: ${name} (born ${birth})${pnr ? "  pnr=" + pnr : ""}`);
+
+  const conditions = await conditionsForPatient(pid);
+  if (conditions.length > 0) {
+    const lung = conditions.filter(c => /^J[34]\d/.test(c.icd10 ?? ""));
+    const others = conditions.filter(c => !/^J[34]\d/.test(c.icd10 ?? ""));
+    if (lung.length > 0)
+      console.log(`  Lung diagnoses: ${lung.map(c => `${c.icd10} (${c.display || "?"})` ).join(", ")}`);
+    if (others.length > 0)
+      console.log(`  Other diagnoses (${others.length}): ${others.slice(0, 5).map(c => c.icd10).join(", ")}${others.length > 5 ? "…" : ""}`);
+  } else {
+    console.log(`  Conditions: none found`);
   }
 
-  // 2. Deduplicate patient references
-  const seen = new Set<string>();
-  const unique = condHits.filter(h => {
-    if (seen.has(h.patientRef)) return false;
-    seen.add(h.patientRef);
-    return true;
-  });
+  const spiro = await fetchSpirometry(pid);
+  if (spiro.length > 0) {
+    const byCode: Record<string, typeof spiro[0]> = {};
+    for (const s of spiro) if (!byCode[s.code]) byCode[s.code] = s;
+    const fev1pct = byCode["19926-5"]?.value;
+    const fev1L   = byCode["20150-9"]?.value;
+    const ratio   = byCode["40445-0"]?.value;
+    const fvc     = byCode["19868-9"]?.value;
+    const gold    = fev1pct !== undefined
+      ? fev1pct >= 80 ? "GOLD 1" : fev1pct >= 50 ? "GOLD 2" : fev1pct >= 30 ? "GOLD 3" : "GOLD 4"
+      : null;
+    console.log(`  Spirometry (${byCode["19926-5"]?.date ?? byCode["20150-9"]?.date ?? "?"}):`
+      + (fev1L   ? `  FEV1=${fev1L}L`           : "")
+      + (fev1pct ? `  FEV1%pred=${fev1pct}%`     : "")
+      + (fvc     ? `  FVC=${fvc}L`               : "")
+      + (ratio   ? `  FEV1/FVC=${ratio}`          : "")
+      + (gold    ? `  → ${gold}`                  : ""));
+  } else {
+    console.log(`  Spirometry: none found`);
+  }
 
-  console.log(`\nUnique patients with matching diagnoses: ${unique.length}\n`);
+  console.log(`  ➜  --patient-id=${pid}`);
+}
 
-  if (unique.length === 0) {
-    console.log("No patients found. Try --codes=J44 or check your credentials.");
+async function main() {
+  console.log("COS Sandbox — COPD/Lung Patient Explorer");
+  console.log("==========================================\n");
+
+  // Strategy 1: find patients via spirometry observations (no patient filter needed)
+  console.log("Searching Observation by spirometry LOINC codes…");
+  const spiroLoinc = ["19926-5", "20150-9", "40445-0"]; // FEV1%pred, FEV1, ratio
+  const patientIds = new Set<string>();
+  for (const code of spiroLoinc) {
+    process.stdout.write(`  code=${code}… `);
+    const ids = await patientsFromObservations(code);
+    console.log(`${ids.size} patient(s)`);
+    for (const id of ids) patientIds.add(id);
+  }
+
+  if (patientIds.size > 0) {
+    console.log(`\nPatients with spirometry data: ${patientIds.size}`);
+    for (const pid of patientIds) await printPatient(pid);
     return;
   }
 
-  // 3. For each patient, fetch demographics + spirometry
-  for (const { patientRef, icd10, display } of unique) {
-    const pid = patientRef.replace("Patient/", "");
-    const p = await fetchPatient(patientRef);
-    if (!p) {
-      console.log(`  ${patientRef}: could not fetch`);
-      continue;
-    }
+  // Strategy 2: known patient IDs — check their conditions
+  console.log("\nNo spirometry found. Checking known patients by ID…");
+  const knownIds = ["754"]; // Emil Andersson found earlier
+  for (const pid of knownIds) await printPatient(pid);
 
-    const nameArr = p.name as Array<Record<string, unknown>> | undefined;
-    const name0 = nameArr?.[0];
-    const name = `${((name0?.given as string[]) ?? []).join(" ")} ${name0?.family ?? ""}`.trim();
-    const birth = p.birthDate as string ?? "?";
-    const idArr = p.identifier as Array<Record<string, unknown>> | undefined;
-    const pnr = idArr?.map(i => i.value as string).find(v => v?.length >= 10) ?? "";
-
-    console.log(`Patient ${pid}: ${name} (born ${birth})${pnr ? "  pnr=" + pnr : ""}`);
-    console.log(`  Diagnosis: ${icd10} — ${display}`);
-
-    const spiro = await fetchSpirometry(pid);
-    if (spiro.length > 0) {
-      const byCode: Record<string, typeof spiro[0]> = {};
-      for (const s of spiro) if (!byCode[s.code]) byCode[s.code] = s;
-
-      const fev1pct = byCode["19926-5"]?.value;
-      const fev1L = byCode["20150-9"]?.value;
-      const ratio = byCode["40445-0"]?.value;
-      const fvc = byCode["19868-9"]?.value;
-
-      const gold = fev1pct !== undefined
-        ? fev1pct >= 80 ? "GOLD 1" : fev1pct >= 50 ? "GOLD 2" : fev1pct >= 30 ? "GOLD 3" : "GOLD 4"
-        : null;
-
-      console.log(`  Spirometry (${byCode["19926-5"]?.date ?? byCode["20150-9"]?.date ?? "?"}):` +
-        (fev1L ? `  FEV1=${fev1L}L` : "") +
-        (fev1pct ? `  FEV1%pred=${fev1pct}%` : "") +
-        (fvc ? `  FVC=${fvc}L` : "") +
-        (ratio ? `  FEV1/FVC=${ratio}` : "") +
-        (gold ? `  → ${gold}` : ""));
-    } else {
-      console.log(`  Spirometry: none found`);
-    }
-
-    console.log(`\n  ➜  bun run scripts/setup-test-patient.ts --patient-id=${pid}`);
-    console.log();
+  // Strategy 3: search by family name
+  console.log("\nSearching patients by common family names…");
+  const names = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson"];
+  const found = new Set<string>();
+  for (const family of names) {
+    if (found.size >= 10) break;
+    try {
+      const bundle = await cos.fhirGet<FhirBundle>("Patient", { family });
+      for (const { resource: r } of bundle.entry ?? []) {
+        const p = r as Record<string, unknown>;
+        if (p.id) found.add(p.id as string);
+      }
+    } catch { /* skip */ }
   }
+  const newIds = [...found].filter(id => !knownIds.includes(id));
+  console.log(`Found ${newIds.length} additional patients via family name search`);
+  for (const pid of newIds.slice(0, 10)) await printPatient(pid);
 }
+
+main().catch(e => { console.error(e); process.exit(1); });
 
 main().catch(e => { console.error(e); process.exit(1); });
