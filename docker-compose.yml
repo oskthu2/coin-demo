@@ -18,16 +18,18 @@
 
 x-agent-env: &agent-env
   env_file: .env
-  environment:
-    # Överskrid BANTEROP_URL beroende på profil (se nedan)
-    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-    COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
-    COS_TOKEN_URL: ${COS_TOKEN_URL}
-    COS_CLIENT_ID: ${COS_CLIENT_ID}
-    COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
-    COS_SCOPE: ${COS_SCOPE:-}
-    DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
-    BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+
+x-agent-environment: &agent-environment
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
+  COS_TOKEN_URL: ${COS_TOKEN_URL}
+  COS_CLIENT_ID: ${COS_CLIENT_ID}
+  COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
+  COS_API_KEY: ${COS_API_KEY:-}
+  COS_SCOPE: ${COS_SCOPE:-}
+  DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-194706302595}
+  BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+  MOCK_FHIR: ${MOCK_FHIR:-false}
 
 services:
   # ── Lokal banterop (profil: local) ─────────────────────────────────────────
@@ -63,14 +65,7 @@ services:
     build: .
     <<: *agent-env
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
-      COS_TOKEN_URL: ${COS_TOKEN_URL}
-      COS_CLIENT_ID: ${COS_CLIENT_ID}
-      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
-      COS_SCOPE: ${COS_SCOPE:-}
-      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
-      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      <<: *agent-environment
       BANTEROP_URL: "http://banterop:3000"
     depends_on:
       banterop:
@@ -84,14 +79,7 @@ services:
     build: .
     <<: *agent-env
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
-      COS_TOKEN_URL: ${COS_TOKEN_URL}
-      COS_CLIENT_ID: ${COS_CLIENT_ID}
-      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
-      COS_SCOPE: ${COS_SCOPE:-}
-      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
-      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      <<: *agent-environment
       BANTEROP_URL: "http://banterop:3000"
     entrypoint: ["bun", "run"]
 
@@ -101,14 +89,7 @@ services:
     build: .
     <<: *agent-env
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
-      COS_TOKEN_URL: ${COS_TOKEN_URL}
-      COS_CLIENT_ID: ${COS_CLIENT_ID}
-      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
-      COS_SCOPE: ${COS_SCOPE:-}
-      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
-      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      <<: *agent-environment
       BANTEROP_URL: "https://banterop.fhir.me"
     stdin_open: true
     tty: true
@@ -119,14 +100,7 @@ services:
     build: .
     <<: *agent-env
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      COS_FHIR_BASE_URL: ${COS_FHIR_BASE_URL}
-      COS_TOKEN_URL: ${COS_TOKEN_URL}
-      COS_CLIENT_ID: ${COS_CLIENT_ID}
-      COS_CLIENT_SECRET: ${COS_CLIENT_SECRET}
-      COS_SCOPE: ${COS_SCOPE:-}
-      DEFAULT_PERSONNUMMER: ${DEFAULT_PERSONNUMMER:-195001011234}
-      BANTEROP_ROOM_ID: ${BANTEROP_ROOM_ID:-}
+      <<: *agent-environment
       BANTEROP_URL: "https://banterop.fhir.me"
     entrypoint: ["bun", "run"]
 
