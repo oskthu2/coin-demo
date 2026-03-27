@@ -130,6 +130,25 @@ export class CosClient {
 
     return res.json() as Promise<T>;
   }
+
+  /** POST a FHIR transaction Bundle to the base URL (no resource path). */
+  async fhirTransaction<T = FhirBundle>(bundle: object): Promise<T> {
+    const token = await this.getToken();
+    const base = this.config.fhirBaseUrl.replace(/\/$/, "");
+    const res = await fetch(base, {
+      method: "POST",
+      headers: this.fhirHeaders(token, { "Content-Type": "application/fhir+json" }),
+      body: JSON.stringify(bundle),
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `FHIR transaction failed (${res.status}): ${await res.text()}`
+      );
+    }
+
+    return res.json() as Promise<T>;
+  }
 }
 
 /** Build a CosClient from environment variables. */

@@ -217,150 +217,114 @@ async function main() {
   }
   console.log(`  ✓ Using patient — FHIR ID: ${pid}\n`);
 
-  // 2. COPD diagnosis
-  console.log("Creating Condition (J44.1)…");
-  await cos.fhirPost("Condition", {
-    resourceType: "Condition",
-    clinicalStatus: {
-      coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-clinical", code: "active" }],
-    },
-    verificationStatus: {
-      coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-ver-status", code: "confirmed" }],
-    },
-    code: {
-      coding: [
-        {
-          system: "http://hl7.org/fhir/sid/icd-10",
-          code: "J44.1",
-          display: "Kroniskt obstruktiv lungsjukdom med akut exacerbation, ospecificerad",
-        },
-      ],
-    },
-    subject: { reference: `Patient/${pid}` },
-    onsetDateTime: monthsAgo(18),
-  });
-  console.log("  ✓ Condition created\n");
+  // 2-11. All clinical resources as a single FHIR transaction bundle
+  //       (individual POSTs are rejected by COS sandbox due to _sid injection)
+  const spiroDate = monthsAgo(2);
 
-  // 3-6. Spirometry
-  const spiroDate = monthsAgo(2); // 2 months ago — within the 12-month window
-  console.log(`Creating spirometry observations (date: ${spiroDate})…`);
-  await cos.fhirPost("Observation", makeObs(pid, "20150-9", "FEV1 measured", 1.8, "L", "L", spiroDate));
-  await cos.fhirPost("Observation", makeObs(pid, "19926-5", "FEV1 % predicted", 62, "%", "%", spiroDate));
-  await cos.fhirPost("Observation", makeObs(pid, "19868-9", "FVC measured", 3.1, "L", "L", spiroDate));
-  await cos.fhirPost("Observation", makeObs(pid, "40445-0", "FEV1/FVC ratio", 0.58, "ratio", "1", spiroDate));
-  console.log("  ✓ Spirometry observations created\n");
-
-  // 7. Smoking status — former smoker (SNOMED 8517006)
-  console.log("Creating smoking status observation…");
-  await cos.fhirPost("Observation", {
-    resourceType: "Observation",
-    status: "final",
-    code: {
-      coding: [{ system: "http://loinc.org", code: "72166-2", display: "Tobacco smoking status" }],
+  const entries = [
+    // Condition: COPD J44.1
+    {
+      resourceType: "Condition",
+      clinicalStatus: {
+        coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-clinical", code: "active" }],
+      },
+      verificationStatus: {
+        coding: [{ system: "http://terminology.hl7.org/CodeSystem/condition-ver-status", code: "confirmed" }],
+      },
+      code: {
+        coding: [{ system: "http://hl7.org/fhir/sid/icd-10", code: "J44.1",
+          display: "Kroniskt obstruktiv lungsjukdom med akut exacerbation, ospecificerad" }],
+      },
+      subject: { reference: `Patient/${pid}` },
+      onsetDateTime: monthsAgo(18),
     },
-    subject: { reference: `Patient/${pid}` },
-    effectiveDateTime: `${monthsAgo(6)}T09:00:00Z`,
-    valueCodeableConcept: {
-      coding: [
-        {
-          system: "http://snomed.info/sct",
-          code: "8517006",
-          display: "Ex-cigarette smoker",
-        },
-      ],
-      text: "Former smoker — quit 2019",
+    // Spirometry
+    makeObs(pid, "20150-9", "FEV1 measured", 1.8, "L", "L", spiroDate),
+    makeObs(pid, "19926-5", "FEV1 % predicted", 62, "%", "%", spiroDate),
+    makeObs(pid, "19868-9", "FVC measured", 3.1, "L", "L", spiroDate),
+    makeObs(pid, "40445-0", "FEV1/FVC ratio", 0.58, "ratio", "1", spiroDate),
+    // Smoking status
+    {
+      resourceType: "Observation",
+      status: "final",
+      code: { coding: [{ system: "http://loinc.org", code: "72166-2", display: "Tobacco smoking status" }] },
+      subject: { reference: `Patient/${pid}` },
+      effectiveDateTime: `${monthsAgo(6)}T09:00:00Z`,
+      valueCodeableConcept: {
+        coding: [{ system: "http://snomed.info/sct", code: "8517006", display: "Ex-cigarette smoker" }],
+        text: "Former smoker — quit 2019",
+      },
     },
-  });
-  console.log("  ✓ Smoking status created\n");
-
-  // 8. BMI
-  console.log("Creating vitals (BMI)…");
-  await cos.fhirPost("Observation", makeObs(pid, "39156-5", "Body mass index (BMI)", 24.5, "kg/m2", "kg/m2", monthsAgo(3)));
-  await cos.fhirPost("Observation", makeObs(pid, "29463-7", "Body weight", 78, "kg", "kg", monthsAgo(3)));
-  await cos.fhirPost("Observation", makeObs(pid, "8302-2", "Body height", 178, "cm", "cm", monthsAgo(12)));
-  console.log("  ✓ Vitals created\n");
-
-  // 9-10. Medications
-  console.log("Creating medication statements…");
-  await cos.fhirPost("MedicationStatement", {
-    resourceType: "MedicationStatement",
-    status: "active",
-    medicationCodeableConcept: {
-      coding: [
-        {
-          system: "http://www.whocc.no/atc",
-          code: "R03BB04",
-          display: "tiotropium",
-        },
-      ],
-      text: "Spiriva Respimat 2.5 µg/dos inhalationslösning",
+    // Vitals
+    makeObs(pid, "39156-5", "Body mass index (BMI)", 24.5, "kg/m2", "kg/m2", monthsAgo(3)),
+    makeObs(pid, "29463-7", "Body weight", 78, "kg", "kg", monthsAgo(3)),
+    makeObs(pid, "8302-2", "Body height", 178, "cm", "cm", monthsAgo(12)),
+    // Medications
+    {
+      resourceType: "MedicationStatement",
+      status: "active",
+      medicationCodeableConcept: {
+        coding: [{ system: "http://www.whocc.no/atc", code: "R03BB04", display: "tiotropium" }],
+        text: "Spiriva Respimat 2.5 µg/dos inhalationslösning",
+      },
+      subject: { reference: `Patient/${pid}` },
+      effectiveDateTime: monthsAgo(24),
+      dosage: [{ text: "2 doser (5 µg) en gång dagligen" }],
     },
-    subject: { reference: `Patient/${pid}` },
-    effectiveDateTime: monthsAgo(24),
-    dosage: [{ text: "2 doser (5 µg) en gång dagligen" }],
-  });
-
-  await cos.fhirPost("MedicationStatement", {
-    resourceType: "MedicationStatement",
-    status: "active",
-    medicationCodeableConcept: {
-      coding: [
-        {
-          system: "http://www.whocc.no/atc",
-          code: "R03AK07",
-          display: "formoterol and budesonide",
-        },
-      ],
-      text: "Symbicort Turbuhaler 160/4.5 µg/dos inhalationspulver",
+    {
+      resourceType: "MedicationStatement",
+      status: "active",
+      medicationCodeableConcept: {
+        coding: [{ system: "http://www.whocc.no/atc", code: "R03AK07", display: "formoterol and budesonide" }],
+        text: "Symbicort Turbuhaler 160/4.5 µg/dos inhalationspulver",
+      },
+      subject: { reference: `Patient/${pid}` },
+      effectiveDateTime: monthsAgo(12),
+      dosage: [{ text: "1-2 doser 2 gånger dagligen" }],
     },
-    subject: { reference: `Patient/${pid}` },
-    effectiveDateTime: monthsAgo(12),
-    dosage: [{ text: "1-2 doser 2 gånger dagligen" }],
-  });
-  console.log("  ✓ Medications created\n");
-
-  // 11. Encounter (today's visit — the one being registered)
-  console.log("Creating encounter (today's outpatient visit)…");
-  await cos.fhirPost("Encounter", {
-    resourceType: "Encounter",
-    status: "finished",
-    class: {
-      system: "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-      code: "AMB",
-      display: "ambulatory",
-    },
-    type: [
-      {
-        coding: [
-          {
-            system: "http://snomed.info/sct",
-            code: "11429006",
-            display: "Consultation",
-          },
-        ],
+    // Encounter
+    {
+      resourceType: "Encounter",
+      status: "finished",
+      class: { system: "http://terminology.hl7.org/CodeSystem/v3-ActCode", code: "AMB", display: "ambulatory" },
+      type: [{
+        coding: [{ system: "http://snomed.info/sct", code: "11429006", display: "Consultation" }],
         text: "KOL uppföljningsbesök",
-      },
-    ],
-    subject: { reference: `Patient/${pid}` },
-    period: { start: `${today}T08:30:00Z`, end: `${today}T09:00:00Z` },
-    reasonCode: [
-      {
-        coding: [
-          { system: "http://hl7.org/fhir/sid/icd-10", code: "J44.1" },
-        ],
-      },
-    ],
-  });
-  console.log("  ✓ Encounter created\n");
+      }],
+      subject: { reference: `Patient/${pid}` },
+      period: { start: `${today}T08:30:00Z`, end: `${today}T09:00:00Z` },
+      reasonCode: [{ coding: [{ system: "http://hl7.org/fhir/sid/icd-10", code: "J44.1" }] }],
+    },
+  ];
+
+  const bundle = {
+    resourceType: "Bundle",
+    type: "transaction",
+    entry: entries.map(resource => ({
+      resource,
+      request: { method: "POST", url: resource.resourceType },
+    })),
+  };
+
+  console.log(`Posting transaction bundle (${entries.length} resources)…`);
+  try {
+    const result = await cos.fhirTransaction(bundle);
+    console.log(`  ✓ Transaction complete — ${(result as { entry?: unknown[] }).entry?.length ?? "?"} entries processed\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`  Transaction failed: ${msg}`);
+    console.log("\n  The COS sandbox does not support write operations.");
+    console.log("  The demo agent will still work but will only see Emil Andersson's existing data.");
+    console.log("  See README for options.\n");
+  }
 
   console.log("═══════════════════════════════════════════════════");
-  console.log("✓ Test patient setup complete!");
+  console.log("✓ Setup complete!");
   console.log(`  FHIR Patient ID : ${pid}`);
-  console.log(`  Personnummer    : ${PERSONNUMMER}`);
   console.log(`\nAdd to .env:`);
-  console.log(`  DEFAULT_PERSONNUMMER=${PERSONNUMMER}`);
+  console.log(`  DEFAULT_PERSONNUMMER=${pid}   # use FHIR ID since sandbox personnummer differs`);
   console.log(`\nRun the demo:`);
-  console.log(`  bun run agent --room=<your-banterop-room-id> --patient=${PERSONNUMMER}`);
+  console.log(`  bun run agent --room=<your-banterop-room-id> --patient=${pid}`);
 }
 
 main().catch((err) => {
