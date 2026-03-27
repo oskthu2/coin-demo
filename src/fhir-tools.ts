@@ -11,6 +11,7 @@
 
 import type { Tool } from "@anthropic-ai/sdk/resources/messages.js";
 import type { CosClient, FhirBundle, FhirResource } from "./cos-client.js";
+import { getMockResponse } from "./mock-fhir-data.js";
 
 // ─── Code-system constants ────────────────────────────────────────────────────
 
@@ -156,11 +157,18 @@ export const FHIR_TOOLS: Tool[] = [
 
 // ─── Tool dispatcher ──────────────────────────────────────────────────────────
 
+/** Set MOCK_FHIR=true (env) or pass useMock=true to bypass real COS calls. */
+export const USE_MOCK_FHIR = process.env.MOCK_FHIR === "true";
+
 export async function executeFhirTool(
   toolName: string,
   args: Record<string, unknown>,
   cos: CosClient
 ): Promise<string> {
+  if (USE_MOCK_FHIR) {
+    const mock = getMockResponse(toolName, args);
+    if (mock !== null) return mock;
+  }
   switch (toolName) {
     case "fhir_find_patient":
       return findPatient(args.personnummer as string, cos);
