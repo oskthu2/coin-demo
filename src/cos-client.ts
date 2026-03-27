@@ -1,6 +1,9 @@
 /**
  * COS (Cambio Open Services) FHIR R4 client.
- * Handles OAuth 2.0 client-credentials token refresh transparently.
+ *
+ * Auth model (per COS Quick Start v1.7):
+ *   - Token: POST with Basic auth header (base64 clientId:clientSecret)
+ *   - FHIR:  Bearer token + Ocp-Apim-Subscription-Key header
  */
 
 export interface CosClientConfig {
@@ -8,6 +11,7 @@ export interface CosClientConfig {
   tokenUrl: string;
   clientId: string;
   clientSecret: string;
+  apiKey: string;       // Ocp-Apim-Subscription-Key from developer portal
   scope?: string;
 }
 
@@ -36,18 +40,20 @@ export class CosClient {
   constructor(private readonly config: CosClientConfig) {}
 
   private async fetchToken(): Promise<void> {
-    const body = new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: this.config.clientId,
-      client_secret: this.config.clientSecret,
-    });
+    // COS uses Basic auth for the token request, not body credentials
+    const credentials = btoa(`${this.config.clientId}:${this.config.clientSecret}`);
+
+    const body = new URLSearchParams({ grant_type: "client_credentials" });
     if (this.config.scope) {
       body.set("scope", this.config.scope);
     }
 
     const res = await fetch(this.config.tokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Authorization": `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
       body: body.toString(),
     });
 
@@ -68,6 +74,15 @@ export class CosClient {
     return this.accessToken!;
   }
 
+  private fhirHeaders(token: string, extra?: Record<string, string>): Record<string, string> {
+    return {
+      "Authorization": `Bearer ${token}`,
+      "Ocp-Apim-Subscription-Key": this.config.apiKey,
+      "Accept": "application/fhir+json",
+      ...extra,
+    };
+  }
+
   /** Issue a FHIR GET request, auto-refreshing the bearer token as needed. */
   async fhirGet<T = FhirBundle>(
     resourcePath: string,
@@ -83,12 +98,7 @@ export class CosClient {
       }
     }
 
-    const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/fhir+json",
-      },
-    });
+    const res = await fetch(url.toString(), { headers: this.fhirHeaders(token) });
 
     if (!res.ok) {
       throw new Error(
@@ -108,11 +118,7 @@ export class CosClient {
     const base = this.config.fhirBaseUrl.replace(/\/$/, "");
     const res = await fetch(`${base}/${resourceType}`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/fhir+json",
-        Accept: "application/fhir+json",
-      },
+      headers: this.fhirHeaders(token, { "Content-Type": "application/fhir+json" }),
       body: JSON.stringify(body),
     });
 
@@ -139,6 +145,7 @@ export function cosClientFromEnv(): CosClient {
     tokenUrl: required("COS_TOKEN_URL"),
     clientId: required("COS_CLIENT_ID"),
     clientSecret: required("COS_CLIENT_SECRET"),
-    scope: process.env["COS_SCOPE"],
+    apiKey: required("COS_API_KEY"),
+    scope: process.env["COS_SCOPE"] || "user/*.read user/*.write",
   });
 }
