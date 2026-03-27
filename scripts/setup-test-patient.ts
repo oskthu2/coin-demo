@@ -114,9 +114,24 @@ async function findOrCreatePatient(cos: ReturnType<typeof cosClientFromEnv>): Pr
         console.log(`  Found existing patient (identifier: ${identifier})`);
         return id;
       }
-    } catch {
-      // try next system
+    } catch (e) {
+      console.log(`    [debug] identifier search failed: ${e instanceof Error ? e.message : e}`);
     }
+  }
+
+  // Also try by birthdate
+  try {
+    const byBirth = await cos.fhirGet<{ entry?: Array<{ resource: { id: string } }> }>(
+      "Patient",
+      { birthdate: "1950-01-01" }
+    );
+    const id = byBirth.entry?.[0]?.resource?.id;
+    if (id) {
+      console.log(`  Found existing patient by birthdate`);
+      return id;
+    }
+  } catch (e) {
+    console.log(`    [debug] birthdate search failed: ${e instanceof Error ? e.message : e}`);
   }
 
   // Not found — try to create
@@ -130,9 +145,10 @@ async function findOrCreatePatient(cos: ReturnType<typeof cosClientFromEnv>): Pr
     console.error(`  Could not create patient: ${msg}`);
     console.log("\n  Listing available patients in sandbox…");
     try {
+      // Try searching by birthdate (more likely to be supported than a bare list)
       const all = await cos.fhirGet<{ entry?: Array<{ resource: { id: string; name?: unknown; birthDate?: string; identifier?: unknown } }> }>(
         "Patient",
-        { _count: "10" }
+        { birthdate: "1950-01-01" }
       );
       if (all.entry?.length) {
         console.log("  Available patients:");
