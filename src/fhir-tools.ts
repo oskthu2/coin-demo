@@ -202,26 +202,30 @@ export async function executeFhirTool(
 async function findPatient(personnummer: string, cos: CosClient): Promise<string> {
   // Normalise to 12-digit format (strip hyphens/pluses)
   const pnr = personnummer.replace(/[-+\s]/g, "");
-  const bundle = await cos.fhirGet<FhirBundle>("Patient", {
-    identifier: `http://electronichealth.se/identifier/patient|${pnr}`,
-    _summary: "true",
-  });
 
-  const entries = bundle.entry ?? [];
-  if (entries.length === 0) {
-    // Try alternate identifier system
-    const bundle2 = await cos.fhirGet<FhirBundle>("Patient", {
-      identifier: pnr,
-      _summary: "true",
-    });
-    entries.push(...(bundle2.entry ?? []));
+  // COS supports: identifier (token), family (string), given (string)
+  // OID 1.2.752.129.2.1.3.1 = Swedish personnummer system
+  const identifiers = [
+    `urn:oid:1.2.752.129.2.1.3.1|${pnr}`,
+    pnr,
+  ];
+
+  let entries: Array<{ resource: Record<string, unknown> }> = [];
+  for (const identifier of identifiers) {
+    const bundle = await cos.fhirGet<FhirBundle>("Patient", { identifier });
+    entries = (bundle.entry ?? []) as typeof entries;
+    if (entries.length > 0) break;
   }
 
+  // Fallback: search by family name derived from the lookup context
+  // (the agent may pass name hints via a specially-formatted personnummer)
   if (entries.length === 0) {
-    return `No patient found with personnummer ${personnummer}`;
+    return `No patient found with personnummer ${personnummer}. ` +
+      `Try fhir_find_patient with the FHIR numeric ID directly, ` +
+      `or use fhir_get_conditions/fhir_get_observations with the known patient ID.`;
   }
 
-  const p = entries[0].resource as Record<string, unknown>;
+  const p = entries[0].resource;
   const name = (p.name as Array<Record<string, unknown>>)?.[0];
   const given = (name?.given as string[])?.join(" ") ?? "";
   const family = (name?.family as string) ?? "";
@@ -242,15 +246,13 @@ async function getConditions(
   icd10Prefix: string | undefined,
   cos: CosClient
 ): Promise<string> {
+  // COS Condition supports: subject (reference), code (token), category (token)
+  // Note: no clinical-status, _sort, or _count support
   const params: Record<string, string> = {
-    patient: patientId,
-    "clinical-status": "active",
-    _sort: "-onset-date",
-    _count: "50",
+    subject: `Patient/${patientId}`,
   };
 
   if (icd10Prefix) {
-    // FHIR code search: filter by system+code prefix
     params.code = `http://hl7.org/fhir/sid/icd-10|${icd10Prefix}`;
   }
 
@@ -287,25 +289,12 @@ async function getMedications(
   atcPrefix: string | undefined,
   cos: CosClient
 ): Promise<string> {
-  const params: Record<string, string> = {
-    patient: patientId,
-    status: "active",
-    _count: "100",
-  };
-
-  const bundle = await cos.fhirGet<FhirBundle>(
-    "MedicationStatement",
-    params
-  );
-  const entries = bundle.entry ?? [];
-
-  // Also try MedicationRequest (some systems use this for active prescriptions)
-  const bundle2 = await cos.fhirGet<FhirBundle>("MedicationRequest", {
-    patient: patientId,
-    status: "active",
-    _count: "100",
+  // COS supports MedicationRequest (search-type) with: subject, _profile, category, date
+  // MedicationStatement is NOT supported by COS FHIR API
+  const bundle = await cos.fhirGet<FhirBundle>("MedicationRequest", {
+    subject: `Patient/${patientId}`,
   });
-  entries.push(...(bundle2.entry ?? []));
+  const entries = (bundle.entry ?? []) as Array<{ resource: Record<string, unknown> }>;
 
   if (entries.length === 0) {
     return "No active medications found in the EHR.";
@@ -358,12 +347,12 @@ async function getSpirometry(
     LOINC.FEV1_FVC_RATIO,
   ].join(",");
 
+  // COS Observation supports: patient (reference), code (token), date, status, subject
   const bundle = await cos.fhirGet<FhirBundle>("Observation", {
-    patient: patientId,
+    patient: `Patient/${patientId}`,
     code: loincCodes,
     date: `ge${dateStr}`,
-    _sort: "-date",
-    _count: "50",
+    status: "final",
   });
 
   const entries = bundle.entry ?? [];
@@ -429,10 +418,9 @@ async function getSpirometry(
 
 async function getVitals(patientId: string, cos: CosClient): Promise<string> {
   const bundle = await cos.fhirGet<FhirBundle>("Observation", {
-    patient: patientId,
+    patient: `Patient/${patientId}`,
     code: [LOINC.BMI, LOINC.BODY_WEIGHT, LOINC.BODY_HEIGHT].join(","),
-    _sort: "-date",
-    _count: "20",
+    status: "final",
   });
 
   const entries = bundle.entry ?? [];
@@ -471,10 +459,9 @@ async function getSmokingStatus(
   cos: CosClient
 ): Promise<string> {
   const bundle = await cos.fhirGet<FhirBundle>("Observation", {
-    patient: patientId,
+    patient: `Patient/${patientId}`,
     code: LOINC.SMOKING_STATUS,
-    _sort: "-date",
-    _count: "5",
+    status: "final",
   });
 
   const entries = bundle.entry ?? [];
@@ -510,11 +497,11 @@ async function getEncounters(
   dateFrom.setMonth(dateFrom.getMonth() - monthsBack);
   const dateStr = dateFrom.toISOString().slice(0, 10);
 
+  // COS Encounter supports: _id, _profile, class, location, status, subject, identifier
+  // Note: no 'patient' or 'date' search params
   const bundle = await cos.fhirGet<FhirBundle>("Encounter", {
-    patient: patientId,
-    date: `ge${dateStr}`,
-    _sort: "-date",
-    _count: "20",
+    subject: `Patient/${patientId}`,
+    status: "finished",
   });
 
   const entries = bundle.entry ?? [];
