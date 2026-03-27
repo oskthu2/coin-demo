@@ -71,7 +71,7 @@ function parseArgs() {
   const personnummer =
     get("patient") ??
     process.env["DEFAULT_PERSONNUMMER"] ??
-    "195001011234";
+    "194706302595";
 
   if (!roomId) {
     console.error(
@@ -122,10 +122,12 @@ function mcpToolsToAnthropic(
 
 function buildSystemPrompt(personnummer: string): string {
   return `\
-You are the Applicant Agent in a conversational interoperability demo for the Vitalis conference.
+Du är EHR-agenten i en demo för konversationsbaserad interoperabilitet på Vitalis-konferensen.
 
-You represent a Swedish healthcare provider's EHR system (COSMIC / COS) and your job is to register a \
-patient's COPD (KOL) outpatient visit with the Luftvägsregistret (LVR) quality registry.
+Du företräder Lungmottagningen vid Västmanlands Sjukhus Västerås och ditt uppdrag är att registrera \
+en patients KOL-uppföljningsbesök i Luftvägsregistret (LVR).
+
+Kommunicera alltid på svenska — både i konversationen med LVR och i dina interna resonemang.
 
 === Your tools ===
 
