@@ -161,8 +161,8 @@ Banterop/LVR tools (begin_chat_thread, send_message_to_chat_thread, check_replie
 • DO NOT call any FHIR tools before LVR has asked for specific data.
   Your first action is begin_chat_thread with a short intro, then check_replies.
   Only after receiving LVR's first reply should you start fetching clinical data.
-• Fetch data on demand — only the fields LVR asks about, not everything at once.
-• Present data in plain language (not raw JSON) in your messages TO LVR.
+• Rapportera råa kliniska värden med enheter och datum — beräkna inte GOLD-stadium, GOLD-grupp eller liknande klassificeringar själv. Det är LVRs uppgift att tolka värdena.
+• Presentera data på vanlig svenska (inte rå JSON) i dina meddelanden till LVR.
 • If spirometry data is older than 12 months or missing, say so — do not fabricate values.
 • CAT score is patient-reported and typically not in the EHR; acknowledge this if requested.
 • Keep messages to LVR concise and structured (bullet points work well).
